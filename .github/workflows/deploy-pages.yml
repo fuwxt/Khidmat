@@ -1,0 +1,54 @@
+# Deploys the static Khidmat site to GitHub Pages.
+#
+# This is a pure static site (index.html + styles.css + app.js + manifest)
+# served from the repository root, so the workflow uploads the entire repo
+# as a Pages artifact and lets the official deploy-pages action publish it.
+#
+# Prerequisite (one-time, manual): in the repository's
+#   Settings -> Pages -> Build and deployment -> Source
+# select "GitHub Actions". After that, every push to main triggers a deploy.
+name: Deploy to GitHub Pages
+
+on:
+  # Auto-deploy whenever main moves.
+  push:
+    branches: [main]
+  # Allow manual re-runs from the Actions tab.
+  workflow_dispatch:
+
+# Permissions required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time. Don't cancel an in-flight production
+# deploy if a new commit lands while it is running.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Repo root holds index.html, styles.css, app.js, manifest.webmanifest.
+          # LICENSE / README / .gitignore are harmless extras in the artifact.
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
