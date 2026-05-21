@@ -1,12 +1,21 @@
-# Deploys the static Khidmat site to GitHub Pages.
+# Deploys the static Khidmat site to GitHub Pages by pushing the site
+# files to a dedicated `gh-pages` branch. GitHub Pages then serves that
+# branch as the public site.
 #
-# This is a pure static site (index.html + styles.css + app.js + manifest)
-# served from the repository root, so the workflow uploads the entire repo
-# as a Pages artifact and lets the official deploy-pages action publish it.
+# Why this approach instead of actions/deploy-pages?
+# The repo's `github-pages` environment was configured (via the GitHub
+# UI's "configure" templates) with a custom branch policy that has no
+# branches in its allow list. Every actions/deploy-pages run was being
+# rejected at the environment gate before any step could execute. The
+# branch-deploy approach avoids that environment entirely.
 #
 # Prerequisite (one-time, manual): in the repository's
 #   Settings -> Pages -> Build and deployment -> Source
-# select "GitHub Actions". After that, every push to main triggers a deploy.
+# select "Deploy from a branch", then choose:
+#   Branch: gh-pages
+#   Folder: / (root)
+# and click Save. The first successful run of this workflow will create
+# the `gh-pages` branch automatically.
 name: Deploy to GitHub Pages
 
 on:
@@ -16,39 +25,45 @@ on:
   # Allow manual re-runs from the Actions tab.
   workflow_dispatch:
 
-# Permissions required by actions/deploy-pages.
+# peaceiris/actions-gh-pages needs write access to push the gh-pages
+# branch. No `pages:` or `id-token:` permissions are needed because we
+# are not using the github-pages environment.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Only one Pages deploy at a time. Don't cancel an in-flight production
-# deploy if a new commit lands while it is running.
+# Don't pile up parallel deploys against the same branch.
 concurrency:
-  group: pages
+  group: gh-pages-deploy
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build and deploy
+    name: Publish to gh-pages branch
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+      - name: Stage site files for publishing
+        # Copy only the runtime assets into a clean folder so that
+        # README, LICENSE, .github/, and the workflow file itself are
+        # not pushed onto the gh-pages branch.
+        run: |
+          mkdir -p _site
+          cp index.html styles.css app.js manifest.webmanifest _site/
+          # LICENSE is fine to publish too, but keep the gh-pages branch
+          # focused on what the browser actually loads.
+          ls -la _site/
 
-      - name: Upload site as Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          # Repo root holds index.html, styles.css, app.js, manifest.webmanifest.
-          # LICENSE / README / .gitignore are harmless extras in the artifact.
-          path: .
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          # Replace the gh-pages branch contents on every deploy so old
+          # files don't linger.
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_message: "Deploy ${{ github.sha }} to gh-pages"
